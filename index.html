@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint Mood Check-in</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts for Retro 8-Bit style & Prompt for Thai Text -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- html2canvas for saving card as image -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <!-- Firebase SDK Imports (v11.6.1) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global App & Firebase Environment Context
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'sprint-mood-checkin-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+
+        // Initialize Firebase Authentication & Firestore Database
+        async function initFirebase() {
+            if (!firebaseConfig) {
+                console.log("Firebase config not available. Falling back to local/GAS storage.");
+                return;
+            }
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (initialAuthToken) {
+                    const userCredential = await signInWithCustomToken(auth, initialAuthToken);
+                    currentUser = userCredential.user;
+                } else {
+                    const userCredential = await signInAnonymously(auth);
+                    currentUser = userCredential.user;
+                }
+                console.log("Firebase initialized successfully for user:", currentUser?.uid);
+            } catch (err) {
+                console.error("Firebase auth/init error:", err);
+            }
+        }
+
+        // Export Function to save survey response directly to Firestore
+        window.saveSurveyToFirestore = async function(surveyData) {
+            if (!db || !currentUser) {
+                console.log("Firestore standard connection unreached. Skipping Firestore write.");
+                return;
+            }
+            try {
+                // Strict Rule 1 Path: /artifacts/{appId}/public/data/responses
+                const publicCollection = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
+                await addDoc(publicCollection, {
+                    ...surveyData,
+                    userId: currentUser.uid,
+                    createdAt: new Date().toISOString()
+                });
+                console.log("Survey data recorded to Cloud Firestore successfully!");
+            } catch (err) {
+                console.error("Error writing document to Firestore:", err);
+            }
+        };
+
+        // Initialize on load
+        initFirebase();
+    </script>
+
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            background-color: #5c94fc; /* Mario Sky Blue */
+            image-rendering: pixelated;
+        }
+
+        .font-pixel {
+            font-family: 'Press Start 2P', monospace;
+        }
+
+        /* Retro Pixel Borders & Buttons */
+        .pixel-box {
+            background-color: #f8f9fa;
+            border: 4px solid #000;
+            box-shadow: 6px 6px 0px #000;
+            position: relative;
+        }
+
+        .pixel-box-dark {
+            background-color: #212529;
+            color: #fff;
+            border: 4px solid #000;
+            box-shadow: 6px 6px 0px #000;
+        }
+
+        .pixel-btn {
+            border: 4px solid #000;
+            box-shadow: 4px 4px 0px #000;
+            transition: all 0.1s ease-in-out;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .pixel-btn:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 6px 6px 0px #000;
+        }
+
+        .pixel-btn:active {
+            transform: translate(2px, 2px);
+            box-shadow: 2px 2px 0px #000;
+        }
+
+        .pixel-btn-selected {
+            border-color: #ff0000;
+            box-shadow: 4px 4px 0px #e52521 !important;
+            transform: scale(1.03);
+        }
+
+        /* Retro Question Block Animation */
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+
+        .animate-pixel-bounce {
+            animation: bounce 0.6s infinite ease-in-out;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #212529;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #f8d800;
+            border: 2px solid #000;
+        }
+
+        /* Duck Runner Mini Game Canvas */
+        #duckCanvas {
+            background-color: #5c94fc;
+            border: 3px solid #000;
+            border-radius: 8px;
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between items-center p-3 md:p-6 text-gray-900">
+
+    <!-- Top Navigation Header -->
+    <header class="w-full max-w-2xl flex justify-between items-center mb-4 pixel-box p-4 bg-yellow-400">
+        <div class="flex items-center space-x-3">
+            <span class="text-2xl animate-pixel-bounce">🦆</span>
+            <div>
+                <h1 class="font-pixel text-xs sm:text-sm md:text-base text-red-600 tracking-wider">SPRINT MOOD CHECK-IN</h1>
+                <p class="text-xs font-bold text-gray-800">สำรวจความในใจประจำ Sprint</p>
+            </div>
+        </div>
+        <button id="soundToggle" onclick="toggleSound()" class="pixel-btn bg-white p-2 text-xs font-pixel rounded">
+            🔊 SOUND: ON
+        </button>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="w-full max-w-2xl flex-1 flex flex-col justify-center">
+
+        <!-- STEP 0: START SCREEN & DUCK RUNNER MINI GAME -->
+        <div id="step-0" class="pixel-box p-6 bg-white text-center">
+            
+            <div class="space-y-4 max-w-md mx-auto text-left mb-4 bg-yellow-50 p-4 border-2 border-dashed border-yellow-400 rounded">
+                <div>
+                    <label class="block text-xs font-bold mb-1 text-gray-700">ชื่อ / ฉายาของคุณ (Name/Nickname):</label>
+                    <input type="text" id="userNickname" placeholder="เช่น Super Dev" class="w-full p-2 border-2 border-black rounded text-sm focus:outline-none focus:bg-yellow-100">
+                </div>
+            </div>
+
+            <!-- DUCK RUNNER MINI GAME CONTAINER -->
+            <div class="my-3 bg-blue-100 p-4 rounded-lg border-2 border-black relative overflow-hidden flex flex-col items-center">
+                <div class="flex items-center justify-between w-full mb-2 px-2">
+                    <span class="font-pixel text-[10px] text-red-600">🎮 MINI GAME: DUCK RUNNER! 🐣</span>
+                    <span class="text-xs text-gray-600 font-bold">เก็บการ์ดงาน: <span id="cardCountDisplay" class="text-red-600">50 คะแนน (5 การ์ด)</span></span>
+                </div>
+                
+                <!-- Game Canvas -->
+                <div class="relative w-full flex justify-center">
+                    <canvas id="duckCanvas" width="400" height="150" class="w-full max-w-md cursor-pointer rounded border-2 border-black"></canvas>
+                </div>
+
+                <div class="mt-2 text-xs text-gray-600 flex items-center justify-between w-full max-w-md px-1">
+                    <span class="text-[11px]">💡 กระโดดเก็บการ์ดงาน 📇 วิ่งเข้าเส้นชัย!</span>
+                    <button onclick="duckJump()" class="pixel-btn bg-yellow-400 hover:bg-yellow-500 font-pixel text-[10px] py-1 px-3 rounded">
+                        🦘 JUMP!
+                    </button>
+                </div>
+            </div>
+
+            <button id="btnStartGame" onclick="startGame()" disabled class="pixel-btn bg-gray-400 text-white font-pixel py-3 px-8 text-sm md:text-base w-full sm:w-auto cursor-not-allowed transition-all">
+                🔒 COLLECT 5 TASK CARDS (50 PTS) TO START!
+            </button>
+        </div>
+
+        <!-- STEP 1: OVERALL VIBE -->
+        <div id="step-1" class="pixel-box p-6 bg-white hidden">
+            <div class="flex justify-between items-center mb-4">
+                <span class="font-pixel text-xs bg-red-100 text-red-600 px-2 py-1 rounded border border-red-400">STAGE 1/4</span>
+                <span class="text-xs font-bold text-gray-500">Overall Vibe</span>
+            </div>
+            <h2 class="text-lg md:text-xl font-bold mb-2 text-gray-800">1. ความรู้สึกโดยรวมต่อ Sprint นี้ (Overall Vibe)</h2>
+            <p class="text-xs text-gray-600 mb-6">เลือกไอคอนแทนพลังใจของคุณในรอบนี้:</p>
+
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <!-- Option 1 -->
+                <div onclick="selectVibe('super_mushroom', this)" class="vibe-option pixel-btn bg-red-50 p-4 text-center border-2 hover:bg-red-100 rounded flex flex-col items-center">
+                    <svg class="w-16 h-16 mb-2" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="4" y="2" width="8" height="2" fill="#E52521"/>
+                        <rect x="2" y="4" width="12" height="6" fill="#E52521"/>
+                        <rect x="5" y="4" width="2" height="3" fill="#FFF"/>
+                        <rect x="9" y="4" width="2" height="3" fill="#FFF"/>
+                        <rect x="3" y="10" width="10" height="4" fill="#FCE1AC"/>
+                        <rect x="5" y="11" width="2" height="2" fill="#000"/>
+                        <rect x="9" y="11" width="2" height="2" fill="#000"/>
+                    </svg>
+                    <span class="font-bold text-sm block">Super Mushroom</span>
+                    <span class="text-xs text-gray-600">เติบโต / มีพลัง / ชอบมาก!</span>
+                </div>
+
+                <!-- Option 2 -->
+                <div onclick="selectVibe('starman', this)" class="vibe-option pixel-btn bg-yellow-50 p-4 text-center border-2 hover:bg-yellow-100 rounded flex flex-col items-center">
+                    <svg class="w-16 h-16 mb-2" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 1H9V4H7V1Z" fill="#F8D800"/>
+                        <path d="M4 4H12V7H4V4Z" fill="#F8D800"/>
+                        <path d="M1 7H15V10H1V7Z" fill="#F8D800"/>
+                        <path d="M3 10H13V13H3V10Z" fill="#F8D800"/>
+                        <path d="M2 13H6V15H2V13Z" fill="#F8D800"/>
+                        <path d="M10 13H14V15H10V13Z" fill="#F8D800"/>
+                        <rect x="5" y="6" width="2" height="3" fill="#000"/>
+                        <rect x="9" y="6" width="2" height="3" fill="#000"/>
+                    </svg>
+                    <span class="font-bold text-sm block">Starman</span>
+                    <span class="text-xs text-gray-600">ฟินสุดๆ / ลื่นไหลไร้พ่าย!</span>
+                </div>
+
+                <!-- Option 3 -->
+                <div onclick="selectVibe('poison_mushroom', this)" class="vibe-option pixel-btn bg-purple-50 p-4 text-center border-2 hover:bg-purple-100 rounded flex flex-col items-center">
+                    <svg class="w-16 h-16 mb-2" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="4" y="2" width="8" height="2" fill="#6B21A8"/>
+                        <rect x="2" y="4" width="12" height="6" fill="#6B21A8"/>
+                        <circle cx="6" cy="6" r="1.5" fill="#A855F7"/>
+                        <circle cx="10" cy="6" r="1.5" fill="#A855F7"/>
+                        <rect x="3" y="10" width="10" height="4" fill="#E9D5FF"/>
+                        <rect x="5" y="11" width="2" height="2" fill="#000"/>
+                        <rect x="9" y="11" width="2" height="2" fill="#000"/>
+                    </svg>
+                    <span class="font-bold text-sm block">Poison Mushroom</span>
+                    <span class="text-xs text-gray-600">เหนื่อยมาก / โดนช็อตฟีล / HP 0</span>
+                </div>
+
+                <!-- Option 4 -->
+                <div onclick="selectVibe('turtle_shell', this)" class="vibe-option pixel-btn bg-green-50 p-4 text-center border-2 hover:bg-green-100 rounded flex flex-col items-center">
+                    <svg class="w-16 h-16 mb-2" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="3" width="10" height="9" rx="2" fill="#16A34A"/>
+                        <rect x="5" y="5" width="6" height="5" fill="#BBF7D0"/>
+                        <rect x="2" y="12" width="12" height="2" fill="#FCE1AC"/>
+                    </svg>
+                    <span class="font-bold text-sm block">Turtle Shell</span>
+                    <span class="text-xs text-gray-600">กดดัน / ต้องระมัดระวังเป็นพิเศษ</span>
+                </div>
+            </div>
+
+            <div class="flex justify-between">
+                <button onclick="goToStep(0)" class="pixel-btn bg-gray-200 hover:bg-gray-300 text-gray-800 font-pixel text-xs py-2 px-4">BACK</button>
+                <button onclick="nextStep(2)" class="pixel-btn bg-green-500 hover:bg-green-600 text-white font-pixel text-xs py-2 px-6">NEXT ⏩</button>
+            </div>
+        </div>
+
+        <!-- STEP 2: CHALLENGE LEVEL -->
+        <div id="step-2" class="pixel-box p-6 bg-white hidden">
+            <div class="flex justify-between items-center mb-4">
+                <span class="font-pixel text-xs bg-red-100 text-red-600 px-2 py-1 rounded border border-red-400">STAGE 2/4</span>
+                <span class="text-xs font-bold text-gray-500">Challenge Level</span>
+            </div>
+            <h2 class="text-lg md:text-xl font-bold mb-2 text-gray-800">2. ระดับความท้าทาย & ความกดดัน (Challenge Level)</h2>
+            <p class="text-xs text-gray-600 mb-6">Sprint นี้เหมือนด่านไหนในชีวิตจริง</p>
+
+            <div class="space-y-3 mb-6">
+                <!-- Level 1 -->
+                <div onclick="selectLevel('level_1_1', this)" class="level-option pixel-btn p-3 bg-blue-50 hover:bg-blue-100 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl">🌤️</span>
+                        <div>
+                            <div class="font-pixel text-xs text-blue-700">World 1-1: Grassland</div>
+                            <div class="text-xs text-gray-600 font-semibold">สบายๆ ชิลๆ ผ่านได้ง่ายไม่มีอุปสรรค</div>
+                        </div>
+                    </div>
+                    <span class="font-pixel text-xs text-gray-400">EASY</span>
+                </div>
+
+                <!-- Level 2 -->
+                <div onclick="selectLevel('bonus_stage', this)" class="level-option pixel-btn p-3 bg-yellow-50 hover:bg-yellow-100 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl">🪙</span>
+                        <div>
+                            <div class="font-pixel text-xs text-yellow-700">Bonus Stage: Coin Room</div>
+                            <div class="text-xs text-gray-600 font-semibold">สนุกสนาน ท้าทายกำลังดี ได้เรียนรู้เยอะมาก</div>
+                        </div>
+                    </div>
+                    <span class="font-pixel text-xs text-yellow-600">FUN</span>
+                </div>
+
+                <!-- Level 3 -->
+                <div onclick="selectLevel('world_2_2', this)" class="level-option pixel-btn p-3 bg-teal-50 hover:bg-teal-100 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl">🐟</span>
+                        <div>
+                            <div class="font-pixel text-xs text-teal-700">World 2-2: Underwater</div>
+                            <div class="text-xs text-gray-600 font-semibold">น้ำลึก อึดอัด เคลื่อนไหวช้า งานติดขัดบ่อย</div>
+                        </div>
+                    </div>
+                    <span class="font-pixel text-xs text-teal-600">STUCK</span>
+                </div>
+
+                <!-- Level 4 -->
+                <div onclick="selectLevel('level_8_4', this)" class="level-option pixel-btn p-3 bg-red-50 hover:bg-red-100 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl">🔥</span>
+                        <div>
+                            <div class="font-pixel text-xs text-red-700">World 8-4: Bowser's Castle</div>
+                            <div class="text-xs text-gray-600 font-semibold">บอสโหด! งานไฟลนก้น ความกดดันสูงสุดๆ</div>
+                        </div>
+                    </div>
+                    <span class="font-pixel text-xs text-red-600">HARD</span>
+                </div>
+            </div>
+
+            <div class="flex justify-between">
+                <button onclick="goToStep(1)" class="pixel-btn bg-gray-200 hover:bg-gray-300 text-gray-800 font-pixel text-xs py-2 px-4">BACK</button>
+                <button onclick="nextStep(3)" class="pixel-btn bg-green-500 hover:bg-green-600 text-white font-pixel text-xs py-2 px-6">NEXT ⏩</button>
+            </div>
+        </div>
+
+        <!-- STEP 3: HIGHLIGHTS & EXCITEMENT -->
+        <div id="step-3" class="pixel-box p-6 bg-white hidden">
+            <div class="flex justify-between items-center mb-4">
+                <span class="font-pixel text-xs bg-red-100 text-red-600 px-2 py-1 rounded border border-red-400">STAGE 3/4</span>
+                <span class="text-xs font-bold text-gray-500">Highlights</span>
+            </div>
+            <h2 class="text-lg md:text-xl font-bold mb-2 text-gray-800">3. สิ่งที่ชอบ / ความตื่นเต้นใน Sprint นี้ (Highlights)</h2>
+            <p class="text-xs text-gray-600 mb-4">อะไรคือพลังบวก หรือความสำเร็จที่คุณภูมิใจที่สุด?</p>
+
+            <div class="mb-4">
+                <label class="block text-xs font-bold mb-2">เลือกแท็กไอคอนประทับใจ (เลือกได้หลายข้อ):</label>
+                <div class="flex flex-wrap gap-2" id="tagContainer">
+                    <button onclick="toggleTag(this, '🤝 Teamwork')" class="tag-btn pixel-btn text-xs bg-gray-100 p-2 rounded">🤝 Teamwork ซัพพอร์ตดี</button>
+                    <button onclick="toggleTag(this, '🚀 Deploy สำเร็จ')" class="tag-btn pixel-btn text-xs bg-gray-100 p-2 rounded">🚀 Deploy สำเร็จ</button>
+                    <button onclick="toggleTag(this, '💡 ได้ลอง Tech ใหม่')" class="tag-btn pixel-btn text-xs bg-gray-100 p-2 rounded">💡 ได้ลอง Tech ใหม่</button>
+                    <button onclick="toggleTag(this, '☕ กาแฟเยียวยา')" class="tag-btn pixel-btn text-xs bg-gray-100 p-2 rounded">☕ กาแฟเยียวยา</button>
+                    <button onclick="toggleTag(this, '🎉 ไม่มี Bug ร้ายแรง')" class="tag-btn pixel-btn text-xs bg-gray-100 p-2 rounded">🎉 ไม่มี Bug ร้ายแรง</button>
+                    <button onclick="toggleTag(this, '⏰ ตรงเวลาตาม Plan')" class="tag-btn pixel-btn text-xs bg-gray-100 p-2 rounded">⏰ ตรงเวลาตาม Plan</button>
+                </div>
+            </div>
+
+            <div class="mb-6">
+                <label class="block text-xs font-bold mb-1">พิมพ์เรื่องที่ประทับใจเพิ่ม (แชร์ได้เลยน้า):</label>
+                <textarea id="positiveText" rows="3" placeholder="เช่น เพื่อนในทีมช่วยแก้บอสตัวใหญ่ทันเวลา..." class="w-full p-2 border-2 border-black rounded text-sm focus:outline-none focus:bg-yellow-50"></textarea>
+            </div>
+
+            <div class="flex justify-between">
+                <button onclick="goToStep(2)" class="pixel-btn bg-gray-200 hover:bg-gray-300 text-gray-800 font-pixel text-xs py-2 px-4">BACK</button>
+                <button onclick="nextStep(4)" class="pixel-btn bg-green-500 hover:bg-green-600 text-white font-pixel text-xs py-2 px-6">NEXT ⏩</button>
+            </div>
+        </div>
+
+        <!-- STEP 4: UNSENT MESSAGES & FEEDBACK -->
+        <div id="step-4" class="pixel-box p-6 bg-white hidden">
+            <div class="flex justify-between items-center mb-4">
+                <span class="font-pixel text-xs bg-red-100 text-red-600 px-2 py-1 rounded border border-red-400">STAGE 4/4</span>
+                <span class="text-xs font-bold text-gray-500">Feedback</span>
+            </div>
+            <h2 class="text-lg md:text-xl font-bold mb-2 text-gray-800">4. สิ่งที่ไม่ชอบ หรืออยากบอกทีม (ปล่อยมันออกมาาาา)</h2>
+            <p class="text-xs text-gray-600 mb-4">มีอะไรที่อยากให้ปลดล็อก ปรับปรุง หรืออยากระบายให้ทีมฟังไหม?</p>
+
+            <div class="mb-6">
+                <textarea id="feedbackText" rows="4" placeholder="ข้อความจากพิกเซลถึงทีม... (เช่น อยากปรับกระบวนการ Daily meeting ให้กระชับขึ้น / เสนอไอเดียปรับปรุงงาน)" class="w-full p-3 border-2 border-black rounded text-sm focus:outline-none focus:bg-yellow-50"></textarea>
+            </div>
+
+            <div class="bg-blue-50 p-3 rounded border border-blue-300 mb-6 text-xs text-blue-800 flex items-start space-x-2">
+                <span class="text-base">🔒</span>
+                <span>ข้อมูลนี้จะถูกส่งไปสรุปผลรวมในทีมเพื่อพัฒนา Sprint ถัดไปให้ดียิ่งขึ้น!</span>
+            </div>
+
+            <div class="flex justify-between">
+                <button onclick="goToStep(3)" class="pixel-btn bg-gray-200 hover:bg-gray-300 text-gray-800 font-pixel text-xs py-2 px-4">BACK</button>
+                <button onclick="submitSurvey()" class="pixel-btn bg-yellow-400 hover:bg-yellow-500 text-black font-pixel text-xs py-3 px-6 animate-pixel-bounce">SUBMIT CARD! 🏆</button>
+            </div>
+        </div>
+
+        <!-- STEP 5: RESULT & AVATAR MOOD CARD -->
+        <div id="step-5" class="hidden flex flex-col items-center">
+            
+            <!-- Screenshot Target Area -->
+            <div id="summaryCard" class="pixel-box-dark p-6 w-full max-w-md relative overflow-hidden my-2">
+                <!-- Retro Card Header -->
+                <div class="flex justify-between items-center border-b-2 border-gray-700 pb-3 mb-4">
+                    <div>
+                        <span class="font-pixel text-xs text-yellow-400">SPRINT MOOD CARD</span>
+                        <h3 id="cardUserName" class="text-lg font-bold text-white">SPRINT DEV</h3>
+                    </div>
+                    <span id="cardSprintBadge" class="font-pixel text-xs bg-red-600 text-white px-2 py-1 rounded">SPRINT --</span>
+                </div>
+
+                <!-- Avatar & Mood Section -->
+                <div class="bg-gray-800 p-4 border-2 border-gray-600 rounded-lg flex flex-col items-center text-center mb-4">
+                    <div id="avatarGraphic" class="w-24 h-24 mb-2 flex items-center justify-center text-5xl">
+                        <!-- SVG Avatar generated dynamic -->
+                    </div>
+                    <div id="cardMoodTitle" class="font-pixel text-sm text-yellow-400 mb-1">SUPER MUSHROOM MODE</div>
+                    <div id="cardMoodDesc" class="text-[11px] text-gray-300 mb-2 font-medium bg-gray-900/80 px-3 py-1 rounded-md border border-gray-700"></div>
+                    <div id="cardLevelBadge" class="text-xs bg-blue-600 text-white px-3 py-0.5 rounded-full font-bold">LEVEL: World 1-1</div>
+                </div>
+
+                <!-- Heartwarming & Inspirational Message Box -->
+                <div class="bg-yellow-900/40 border-2 border-yellow-500/60 p-3 rounded-lg text-center mb-4">
+                    <span class="font-pixel text-[10px] text-yellow-400 block mb-1 animate-pixel-bounce">✨ INSPIRATIONAL MESSAGE ✨</span>
+                    <p id="cardInspirationalText" class="text-xs text-yellow-100 font-medium leading-relaxed"></p>
+                </div>
+
+                <!-- Summary Content -->
+                <div class="space-y-3 text-xs text-gray-200">
+                    <div class="bg-gray-900 p-3 rounded border border-gray-700">
+                        <span class="font-bold text-yellow-400 block mb-1">✨ HIGHLIGHTS & POWER-UPS:</span>
+                        <div id="cardTags" class="flex flex-wrap gap-1 mb-1"></div>
+                        <p id="cardPositive" class="italic text-gray-300">-</p>
+                    </div>
+
+                    <div class="bg-gray-900 p-3 rounded border border-gray-700">
+                        <span class="font-bold text-red-400 block mb-1">💌 MESSAGE TO TEAM:</span>
+                        <p id="cardFeedback" class="italic text-gray-300">-</p>
+                    </div>
+                </div>
+
+                <!-- Card Footer -->
+                <div class="mt-4 pt-3 border-t border-gray-700 flex justify-between items-center text-[10px] text-gray-400 font-pixel">
+                    <span>SPRINT CHECK-IN</span>
+                    <span id="cardDate">2026-10-27</span>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="w-full max-w-md space-y-3 mt-3">
+                <button onclick="downloadCard()" class="pixel-btn bg-green-500 hover:bg-green-600 text-white font-pixel text-xs py-3 w-full flex items-center justify-center space-x-2">
+                    <span>📸 SAVE MOOD CARD (IMAGE)</span>
+                </button>
+                <button onclick="toggleConfigModal()" class="pixel-btn bg-blue-500 hover:bg-blue-600 text-white font-pixel text-xs py-2 w-full">
+                    ⚙️ GOOGLE SHEET SETTINGS
+                </button>
+                <button onclick="resetForm()" class="pixel-btn bg-gray-200 hover:bg-gray-300 text-gray-800 font-pixel text-xs py-2 w-full">
+                    🔄 PLAY AGAIN / NEW RESPONSE
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full max-w-2xl text-center text-xs text-white font-bold my-4 bg-black/30 p-2 rounded">
+        Sprint Mood Check-in Application
+    </footer>
+
+    <!-- Modal: Google Sheet API Settings & Code Guide -->
+    <div id="configModal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 hidden">
+        <div class="pixel-box bg-white max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+            <h3 class="font-pixel text-sm text-red-600 mb-3">⚙️ GOOGLE SHEET INTEGRATION</h3>
+            <p class="text-xs text-gray-600 mb-4">นำ Web App URL จาก Google Apps Script มาใส่ตรงนี้เพื่อบันทึกข้อมูลเข้า Sheet โดยตรง:</p>
+
+            <div class="mb-4">
+                <label class="block text-xs font-bold mb-1">Google Apps Script Web App URL:</label>
+                <input type="text" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full p-2 border-2 border-black rounded text-xs">
+            </div>
+
+            <div class="mb-4">
+                <button onclick="saveGasUrl()" class="pixel-btn bg-green-500 text-white font-pixel text-xs py-2 px-4 w-full mb-2">SAVE URL</button>
+            </div>
+
+            <hr class="my-4 border-gray-400">
+
+            <h4 class="font-bold text-xs mb-2">📄 ตัวอย่างโค้ด Google Apps Script (GAS):</h4>
+            <p class="text-[11px] text-gray-600 mb-2">1. สร้าง Google Sheet -> ไปที่ Extensions > Apps Script<br>2. วางโค้ดด้านล่างแล้ว Deploy as Web App (Anyone trigger):</p>
+            <pre class="bg-gray-800 text-green-400 p-3 rounded text-[10px] overflow-x-auto font-mono">
+function doPost(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = JSON.parse(e.postData.contents);
+  
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["Timestamp", "Nickname", "Sprint", "Vibe", "Level", "Tags", "Positive", "Feedback"]);
+    sheet.getRange(1, 1, 1, 8).setBackground("#F8D800").setFontWeight("bold");
+  }
+
+  sheet.appendRow([
+    new Date(),
+    data.nickname,
+    data.sprint,
+    data.vibe,
+    data.level,
+    data.tags.join(', '),
+    data.positive,
+    data.feedback
+  ]);
+  
+  return ContentService.createTextOutput(JSON.stringify({result: "success"}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+            </pre>
+
+            <button onclick="toggleConfigModal()" class="pixel-btn bg-gray-400 text-white font-pixel text-xs py-2 px-4 w-full mt-4">CLOSE</button>
+        </div>
+    </div>
+
+    <!-- JavaScript Logic & Sound FX -->
+    <script>
+        // Form Data State
+        let surveyData = {
+            nickname: '',
+            sprint: '',
+            vibe: '',
+            level: '',
+            tags: [],
+            positive: '',
+            feedback: ''
+        };
+
+        let soundEnabled = true;
+
+        // 8-Bit Web Audio Sound Synthesizer
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new AudioContext();
+            }
+        }
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                initAudio();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                const now = audioCtx.currentTime;
+
+                if (type === 'click') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.exponentialRampToValueAtTime(800, now + 0.05);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+                    osc.start(now);
+                    osc.stop(now + 0.05);
+                } else if (type === 'jump') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.exponentialRampToValueAtTime(600, now + 0.15);
+                    gain.gain.setValueAtTime(0.12, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                } else if (type === 'coin') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(987.77, now);
+                    osc.frequency.setValueAtTime(1318.51, now + 0.08);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                } else if (type === 'hit') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(120, now);
+                    osc.frequency.exponentialRampToValueAtTime(40, now + 0.2);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                } else if (type === 'select') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, now);
+                    osc.frequency.setValueAtTime(659.25, now + 0.08);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                } else if (type === 'win') {
+                    const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99];
+                    notes.forEach((freq, idx) => {
+                        const noteOsc = audioCtx.createOscillator();
+                        const noteGain = audioCtx.createGain();
+                        noteOsc.type = 'square';
+                        noteOsc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                        noteGain.gain.setValueAtTime(0.1, now + idx * 0.08);
+                        noteGain.gain.exponentialRampToValueAtTime(0.01, now + (idx + 1) * 0.08);
+                        noteOsc.connect(noteGain);
+                        noteGain.connect(audioCtx.destination);
+                        noteOsc.start(now + idx * 0.08);
+                        noteOsc.stop(now + (idx + 1) * 0.08);
+                    });
+                }
+            } catch (e) {
+                console.log("Audio play error:", e);
+            }
+        }
+
+        // ==========================================
+        // DUCK RUNNER MINI GAME ENGINE
+        // ==========================================
+        const canvas = document.getElementById('duckCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let gameScore = 0;
+        let gameUnlocked = false;
+        let isGameOver = false;
+        let finishLineX = null; // Position of finish line banner
+        let hasReachedFinish = false;
+
+        // Custom Outfits for Yellow Duck facing Right
+        const DUCK_OUTFITS = ['ribbon', 'crown', 'cap', 'glasses', 'cowboy', 'flower', 'headphone'];
+        let currentOutfit = 'ribbon';
+
+        function randomizeDuckOutfit() {
+            const randomIndex = Math.floor(Math.random() * DUCK_OUTFITS.length);
+            currentOutfit = DUCK_OUTFITS[randomIndex];
+        }
+
+        const duck = {
+            x: 40,
+            y: 95,
+            width: 32,
+            height: 32,
+            vy: 0,
+            gravity: 0.6,
+            jumpPower: -9.5,
+            isJumping: false,
+            frame: 0
+        };
+
+        let obstacles = [];
+        let taskCards = [];
+        let frameCount = 0;
+        let gameLoopReq;
+
+        function duckJump() {
+            if (hasReachedFinish) return; // Disable jumping once finish line is passed
+            
+            if (!duck.isJumping && !isGameOver) {
+                duck.vy = duck.jumpPower;
+                duck.isJumping = true;
+                playSound('jump');
+            } else if (isGameOver) {
+                resetDuckGame();
+            }
+        }
+
+        // Keyboard & Touch events for Jump
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                const step0 = document.getElementById('step-0');
+                if (!step0.classList.contains('hidden')) {
+                    e.preventDefault();
+                    duckJump();
+                }
+            }
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            duckJump();
+        });
+        canvas.addEventListener('mousedown', duckJump);
+
+        function resetDuckGame() {
+            gameScore = 0;
+            isGameOver = false;
+            gameUnlocked = false;
+            finishLineX = null;
+            hasReachedFinish = false;
+            obstacles = [];
+            taskCards = [];
+            duck.x = 40;
+            duck.y = 95;
+            duck.vy = 0;
+            duck.isJumping = false;
+            randomizeDuckOutfit(); // Random outfit on restart
+        }
+
+        // Render Pixel Yellow Duck Facing Right with Accessories
+        function drawYellowDuck(x, y, outfit, isJumping) {
+            ctx.save();
+
+            // Wing animation offset
+            const wingY = (Math.floor(frameCount / 6) % 2 === 0 && !isJumping) ? 0 : -2;
+
+            // 1. Duck Body (Cute Yellow)
+            ctx.fillStyle = '#FFD700'; // Bright Yellow
+            ctx.fillRect(x + 6, y + 14, 20, 14); // Main Body
+            ctx.fillRect(x + 14, y + 6, 14, 12);  // Head (Facing Right)
+
+            // Tail
+            ctx.fillRect(x + 2, y + 16, 4, 6);
+
+            // Wing
+            ctx.fillStyle = '#E6C200';
+            ctx.fillRect(x + 8, y + 16 + wingY, 8, 6);
+
+            // 2. Beak facing RIGHT (Orange)
+            ctx.fillStyle = '#FF6B00';
+            ctx.fillRect(x + 28, y + 10, 6, 4);
+
+            // 3. Cute Eye facing Right (Black & White highlight)
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(x + 22, y + 8, 3, 3);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(x + 23, y + 8, 1, 1);
+
+            // Cheek Blush (Cute Pink)
+            ctx.fillStyle = '#FF9999';
+            ctx.fillRect(x + 20, y + 12, 3, 2);
+
+            // 4. Feet
+            ctx.fillStyle = '#FF6B00';
+            if (isJumping) {
+                ctx.fillRect(x + 10, y + 28, 4, 3);
+                ctx.fillRect(x + 18, y + 28, 4, 3);
+            } else {
+                const legOffset = (Math.floor(frameCount / 4) % 2 === 0) ? 0 : 2;
+                ctx.fillRect(x + 10 + legOffset, y + 28, 5, 4);
+                ctx.fillRect(x + 18 - legOffset, y + 28, 5, 4);
+            }
+
+            // 5. RANDOMIZED OUTFITS & ACCESSORIES
+            if (outfit === 'ribbon') {
+                ctx.fillStyle = '#FF2442';
+                ctx.fillRect(x + 16, y + 3, 4, 3);
+                ctx.fillRect(x + 14, y + 2, 2, 2);
+                ctx.fillRect(x + 20, y + 2, 2, 2);
+            } else if (outfit === 'crown') {
+                ctx.fillStyle = '#FFD700';
+                ctx.fillRect(x + 15, y + 1, 10, 5);
+                ctx.fillStyle = '#FF0055';
+                ctx.fillRect(x + 16, y, 2, 2);
+                ctx.fillRect(x + 19, y - 1, 2, 2);
+                ctx.fillRect(x + 22, y, 2, 2);
+            } else if (outfit === 'cap') {
+                ctx.fillStyle = '#E52521';
+                ctx.fillRect(x + 13, y + 2, 14, 4);
+                ctx.fillRect(x + 20, y + 4, 8, 2);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(x + 17, y + 3, 3, 2);
+            } else if (outfit === 'glasses') {
+                ctx.fillStyle = '#111111';
+                ctx.fillRect(x + 20, y + 8, 8, 4);
+                ctx.fillRect(x + 17, y + 9, 4, 1);
+            } else if (outfit === 'cowboy') {
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(x + 11, y + 3, 18, 3);
+                ctx.fillRect(x + 15, y - 1, 10, 4);
+            } else if (outfit === 'flower') {
+                ctx.fillStyle = '#FF69B4';
+                ctx.fillRect(x + 14, y + 2, 4, 4);
+                ctx.fillStyle = '#FFFF00';
+                ctx.fillRect(x + 15, y + 3, 2, 2);
+            } else if (outfit === 'headphone') {
+                ctx.fillStyle = '#00E5FF';
+                ctx.fillRect(x + 14, y + 3, 11, 2);
+                ctx.fillRect(x + 13, y + 5, 3, 6);
+                ctx.fillRect(x + 22, y + 5, 3, 6);
+            }
+
+            ctx.restore();
+        }
+
+        // Render Pixel Teen Girl with Glasses Running Left
+        function drawTeenGirl(x, y) {
+            ctx.save();
+            const legSwing = (Math.floor(frameCount / 4) % 2 === 0) ? 0 : 2;
+
+            // Hair
+            ctx.fillStyle = '#5C2C16';
+            ctx.fillRect(x + 2, y, 12, 8);
+            ctx.fillRect(x + 11, y - 1, 3, 4);
+
+            // Face
+            ctx.fillStyle = '#FFDFC4';
+            ctx.fillRect(x + 2, y + 6, 10, 7);
+
+            // Glasses
+            ctx.fillStyle = '#1D4ED8';
+            ctx.fillRect(x + 2, y + 7, 4, 4);
+            ctx.fillRect(x + 7, y + 7, 4, 4);
+            ctx.fillStyle = '#E0F2FE';
+            ctx.fillRect(x + 3, y + 8, 2, 2);
+            ctx.fillRect(x + 8, y + 8, 2, 2);
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(x + 4, y + 8, 1, 2);
+            ctx.fillRect(x + 9, y + 8, 1, 2);
+
+            // Hoodie
+            ctx.fillStyle = '#EC4899';
+            ctx.fillRect(x + 3, y + 13, 10, 8);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(x + 5, y + 13, 4, 2);
+
+            // Arms Reaching Forward
+            ctx.fillStyle = '#FFDFC4';
+            ctx.fillRect(x - 2, y + 14, 5, 3);
+
+            // Skirt
+            ctx.fillStyle = '#1E3A8A';
+            ctx.fillRect(x + 2, y + 21, 11, 4);
+
+            // Legs & Shoes
+            ctx.fillStyle = '#FFDFC4';
+            ctx.fillRect(x + 3 + legSwing, y + 25, 3, 4);
+            ctx.fillRect(x + 8 - legSwing, y + 25, 3, 4);
+
+            ctx.fillStyle = '#EF4444';
+            ctx.fillRect(x + 1 + legSwing, y + 28, 5, 3);
+            ctx.fillRect(x + 7 - legSwing, y + 28, 5, 3);
+
+            ctx.restore();
+        }
+
+        // Render Finish Line Banner & Pole
+        function drawFinishLine(x) {
+            ctx.save();
+            // Left & Right Poles
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(x, 40, 6, 85);
+
+            // Checkered Banner Flag
+            const flagWidth = 24;
+            const flagHeight = 24;
+            const squareSize = 6;
+
+            for (let r = 0; r < flagHeight / squareSize; r++) {
+                for (let c = 0; c < flagWidth / squareSize; c++) {
+                    ctx.fillStyle = ((r + c) % 2 === 0) ? '#FFFFFF' : '#000000';
+                    ctx.fillRect(x + 6 + (c * squareSize), 45 + (r * squareSize), squareSize, squareSize);
+                }
+            }
+
+            // FINISH Text Banner
+            ctx.fillStyle = '#E52521';
+            ctx.fillRect(x - 10, 25, 50, 15);
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - 10, 25, 50, 15);
+
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '7px "Press Start 2P", monospace';
+            ctx.fillText('FINISH', x - 5, 36);
+
+            ctx.restore();
+        }
+
+        function updateDuckGame() {
+            frameCount++;
+
+            // Clear Background (Retro Blue Sky)
+            ctx.fillStyle = '#5c94fc';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Clouds
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect((200 - (frameCount % 400)) * 0.5, 20, 40, 15);
+            ctx.fillRect((450 - (frameCount % 400)) * 0.5, 35, 30, 12);
+
+            // Draw Ground (Brick Pattern)
+            ctx.fillStyle = '#e75910';
+            ctx.fillRect(0, 125, canvas.width, 25);
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 125, canvas.width, 3);
+            for (let x = 0; x < canvas.width; x += 20) {
+                ctx.fillRect((x - (frameCount % 20)), 125, 2, 25);
+            }
+
+            if (!isGameOver) {
+                // Physics Update
+                duck.vy += duck.gravity;
+                duck.y += duck.vy;
+
+                if (duck.y >= 95) {
+                    duck.y = 95;
+                    duck.vy = 0;
+                    duck.isJumping = false;
+                }
+
+                // Finish sequence: when score reaches 50, spawn finish line
+                if (gameScore >= 50 && finishLineX === null) {
+                    finishLineX = canvas.width + 50;
+                }
+
+                // If finish line is active, scroll it in
+                if (finishLineX !== null && !hasReachedFinish) {
+                    finishLineX -= 3.5;
+                    if (finishLineX <= duck.x + 10) {
+                        hasReachedFinish = true;
+                        gameUnlocked = true;
+                        playSound('win');
+
+                        const btn = document.getElementById('btnStartGame');
+                        btn.disabled = false;
+                        btn.className = 'pixel-btn bg-red-500 hover:bg-red-600 text-white font-pixel py-3 px-8 text-sm md:text-base w-full sm:w-auto animate-pixel-bounce cursor-pointer';
+                        btn.innerText = 'PRESS START! 🎮';
+                    }
+                }
+
+                // Duck runs past finish line when complete
+                if (hasReachedFinish && duck.x < canvas.width + 40) {
+                    duck.x += 2.5;
+                }
+
+                // Spawn Obstacles only if finish line is NOT active
+                if (finishLineX === null && frameCount % 100 === 0) {
+                    const obstacleTypes = ['cactus', 'cactus', 'teen_girl'];
+                    const chosenType = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
+
+                    if (chosenType === 'teen_girl') {
+                        obstacles.push({
+                            type: 'teen_girl',
+                            x: canvas.width,
+                            y: 94,
+                            width: 16,
+                            height: 31
+                        });
+                    } else {
+                        const colors = ['#16A34A', '#EA580C', '#EC4899', '#0284C7', '#8B5CF6'];
+                        const randomColor = colors[Math.floor(Math.random() * colors.length)];
+                        obstacles.push({
+                            type: 'cactus',
+                            x: canvas.width,
+                            y: 95,
+                            width: 18,
+                            height: 30,
+                            color: randomColor
+                        });
+                    }
+                }
+
+                // Spawn Task Cards only if finish line is NOT active
+                if (finishLineX === null && frameCount % 60 === 0) {
+                    const cardColors = ['#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
+                    const randomCardColor = cardColors[Math.floor(Math.random() * cardColors.length)];
+                    taskCards.push({
+                        x: canvas.width,
+                        y: Math.random() > 0.5 ? 65 : 85,
+                        width: 16,
+                        height: 18,
+                        color: randomCardColor
+                    });
+                }
+            }
+
+            // Draw Finish Line if active
+            if (finishLineX !== null) {
+                drawFinishLine(finishLineX);
+            }
+
+            // Draw & Update Obstacles
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                if (!isGameOver && !hasReachedFinish) obs.x -= 3.5;
+
+                if (obs.type === 'teen_girl') {
+                    drawTeenGirl(obs.x, obs.y);
+                } else {
+                    ctx.fillStyle = obs.color || '#16A34A';
+                    ctx.fillRect(obs.x + 5, obs.y, 8, obs.height);
+                    ctx.fillRect(obs.x, obs.y + 10, 5, 4);
+                    ctx.fillRect(obs.x, obs.y + 6, 4, 8);
+                    ctx.fillRect(obs.x + 13, obs.y + 14, 5, 4);
+                    ctx.fillRect(obs.x + 14, obs.y + 10, 4, 8);
+                    
+                    ctx.fillStyle = '#FF69B4';
+                    ctx.fillRect(obs.x + 7, obs.y - 3, 4, 3);
+
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(obs.x + 5, obs.y, 8, obs.height);
+                }
+
+                // Collision Detection with Duck
+                if (
+                    !hasReachedFinish &&
+                    duck.x < obs.x + obs.width &&
+                    duck.x + duck.width > obs.x &&
+                    duck.y < obs.y + obs.height &&
+                    duck.y + duck.height > obs.y
+                ) {
+                    if (!isGameOver) playSound('hit');
+                    isGameOver = true;
+                }
+
+                if (obs.x + obs.width < 0) obstacles.splice(i, 1);
+            }
+
+            // Draw & Update Task Cards
+            for (let i = taskCards.length - 1; i >= 0; i--) {
+                let card = taskCards[i];
+                if (!isGameOver && !hasReachedFinish) card.x -= 3.5;
+
+                // Draw Task Card
+                ctx.save();
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(card.x, card.y, card.width, card.height);
+                ctx.fillStyle = card.color;
+                ctx.fillRect(card.x, card.y, card.width, 5);
+                ctx.fillStyle = '#9CA3AF';
+                ctx.fillRect(card.x + 2, card.y + 7, 12, 2);
+                ctx.fillRect(card.x + 2, card.y + 11, 8, 2);
+                ctx.fillStyle = '#10B981';
+                ctx.fillRect(card.x + 11, card.y + 11, 3, 3);
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(card.x, card.y, card.width, card.height);
+                ctx.restore();
+
+                // Collect Task Card
+                if (
+                    !hasReachedFinish &&
+                    duck.x < card.x + card.width &&
+                    duck.x + duck.width > card.x &&
+                    duck.y < card.y + card.height &&
+                    duck.y + duck.height > card.y
+                ) {
+                    gameScore += 10;
+                    playSound('coin');
+                    taskCards.splice(i, 1);
+                    continue;
+                }
+
+                if (card.x + card.width < 0) taskCards.splice(i, 1);
+            }
+
+            // Render Animated Yellow Duck facing right with random outfit
+            drawYellowDuck(duck.x, duck.y, currentOutfit, duck.isJumping);
+
+            // Draw Score Board (Task Card Count & Score)
+            const cardCount = Math.floor(gameScore / 10);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '10px "Press Start 2P", monospace';
+            ctx.fillText(`CARDS: ${cardCount} (${gameScore} PTS)`, 10, 20);
+
+            // Victory Banner Overlay on finish
+            if (hasReachedFinish) {
+                ctx.fillStyle = '#FFE600';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 2;
+                ctx.fillRect(100, 45, 200, 40);
+                ctx.strokeRect(100, 45, 200, 40);
+
+                ctx.fillStyle = '#E52521';
+                ctx.font = '10px "Press Start 2P", monospace';
+                ctx.fillText('GOAL REACHED! 🏁', 115, 68);
+            }
+
+            if (isGameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ff4444';
+                ctx.font = '12px "Press Start 2P", monospace';
+                ctx.fillText('GAME OVER!', 130, 65);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '9px "Press Start 2P", monospace';
+                ctx.fillText('CLICK OR JUMP TO RETRY', 95, 90);
+            }
+
+            gameLoopReq = requestAnimationFrame(updateDuckGame);
+        }
+
+        // Start Duck Game Loop on Load & Pick Random Outfit
+        window.onload = function() {
+            randomizeDuckOutfit();
+            updateDuckGame();
+        };
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            document.getElementById('soundToggle').innerText = soundEnabled ? '🔊 SOUND: ON' : '🔇 SOUND: OFF';
+        }
+
+        // Navigation & Flow
+        function startGame() {
+            const nicknameEl = document.getElementById('userNickname');
+            const nickname = nicknameEl ? nicknameEl.value.trim() : '';
+
+            if (!nickname) {
+                alert('กรุณากรอกชื่อหรือฉายาของคุณก่อนเริ่มเกมครับ!');
+                return;
+            }
+
+            const today = new Date();
+            const yearMonth = today.toISOString().slice(0, 7);
+
+            surveyData.nickname = nickname;
+            surveyData.sprint = `SPRINT ${yearMonth}`;
+            playSound('select');
+            goToStep(1);
+        }
+
+        function goToStep(stepNum) {
+            playSound('click');
+            for (let i = 0; i <= 5; i++) {
+                const el = document.getElementById(`step-${i}`);
+                if (el) el.classList.add('hidden');
+            }
+            document.getElementById(`step-${stepNum}`).classList.remove('hidden');
+        }
+
+        function nextStep(targetStep) {
+            if (targetStep === 2 && !surveyData.vibe) {
+                alert('โปรดเลือกความรู้สึกโดยรวมของคุณก่อนไปต่อครับ');
+                return;
+            }
+            if (targetStep === 3 && !surveyData.level) {
+                alert('โปรดเลือกระดับความท้าทายก่อนไปต่อครับ');
+                return;
+            }
+            goToStep(targetStep);
+        }
+
+        // Selections
+        function selectVibe(vibeKey, element) {
+            playSound('select');
+            surveyData.vibe = vibeKey;
+            document.querySelectorAll('.vibe-option').forEach(el => el.classList.remove('pixel-btn-selected'));
+            element.classList.add('pixel-btn-selected');
+        }
+
+        function selectLevel(levelKey, element) {
+            playSound('select');
+            surveyData.level = levelKey;
+            document.querySelectorAll('.level-option').forEach(el => el.classList.remove('pixel-btn-selected'));
+            element.classList.add('pixel-btn-selected');
+        }
+
+        function toggleTag(button, tagText) {
+            playSound('click');
+            if (surveyData.tags.includes(tagText)) {
+                surveyData.tags = surveyData.tags.filter(t => t !== tagText);
+                button.classList.remove('bg-yellow-300', 'border-yellow-600');
+                button.classList.add('bg-gray-100');
+            } else {
+                surveyData.tags.push(tagText);
+                button.classList.remove('bg-gray-100');
+                button.classList.add('bg-yellow-300', 'border-yellow-600');
+            }
+        }
+
+        // Final Submission
+        function submitSurvey() {
+            surveyData.positive = document.getElementById('positiveText').value.trim() || 'ไม่มีระบุเพิ่มเติม';
+            surveyData.feedback = document.getElementById('feedbackText').value.trim() || 'ไม่มีข้อความฝากถึงทีม';
+
+            playSound('win');
+            renderSummaryCard();
+            
+            // Save to Cloud Persistence (Firestore) & Google Sheet / LocalStorage
+            if (typeof window.saveSurveyToFirestore === 'function') {
+                window.saveSurveyToFirestore(surveyData);
+            }
+            sendToGoogleSheet(surveyData);
+            
+            goToStep(5);
+        }
+
+        // Render Summary Card Graphics & Details
+        function renderSummaryCard() {
+            document.getElementById('cardUserName').innerText = surveyData.nickname.toUpperCase();
+            document.getElementById('cardSprintBadge').innerText = surveyData.sprint.toUpperCase();
+            document.getElementById('cardDate').innerText = new Date().toISOString().split('T')[0];
+
+            const avatarBox = document.getElementById('avatarGraphic');
+            const moodTitle = document.getElementById('cardMoodTitle');
+            const moodDesc = document.getElementById('cardMoodDesc');
+            const inspirationalEl = document.getElementById('cardInspirationalText');
+
+            const quotes = {
+                super_mushroom: [
+                    "🍄 คุณเติบโตขึ้นอีกขั้นแล้วนะ! ขอบคุณที่ทุ่มเทและอัปเวลไปพร้อมกับทีม!",
+                    "🌟 เก่งมาก! พลังแห่งความตั้งใจของคุณทำให้ Sprint นี้ก้าวหน้าไปไกล!",
+                    "🚀 สกิลใหม่เกิดขึ้นแล้ว! คุณคือผู้เล่นสำคัญที่ช่วยให้ทีมแข็งแกร่งขึ้น"
+                ],
+                starman: [
+                    "⭐ สุดยอดไร้พ่าย! ความสดใสและพลังงานของคุณทำทุกคนยิ้มตาม!",
+                    "✨ เปร่งประกายสุดๆ! ขอบคุณที่ช่วยสร้างจังหวะการทำงานที่ราบรื่นนะ",
+                    "🏆 ร่างทองของคุณฮีลใจคนในทีมได้ดีมากๆ ลุยต่อด่านถัดไปกันเลย!"
+                ],
+                poison_mushroom: [
+                    "💖 Sprint นี้หนักหนามากใช่มั้ย... ไม่เป็นไรนะ คุณทำเต็มที่ที่สุดแล้วพักผ่อนเยอะๆ น้า!",
+                    "🛡️ HP หมดก็แค่กด Continue! ขอบคุณที่ไม่ยอมแพ้ คุณเก่งมากๆ แล้วนะ",
+                    "☕ เหนื่อยก็พักสักนิดนะ... ทีมเราพร้อมช่วยซัพพอร์ตและก้าวผ่านไปด้วยกันเสมอ!"
+                ],
+                turtle_shell: [
+                    "🐢 การตั้งรับที่รอบคอบของคุณ คือเกราะคุ้มกันที่ทำให้ทีมปลอดภัย ขอบคุณนะ!",
+                    "🌈 ความระมัดระวังของคุณช่วยเซฟทีมไว้ได้เยอะมาก คุณทำหน้าที่ได้ดีเยี่ยมเลย!",
+                    "💪 ถึงจะกดดันแต่ก็ผ่านมันมาได้! คุณมีความอดทนและเก่งมากๆ เลยนะ"
+                ]
+            };
+
+            const getRandomQuote = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+            if (surveyData.vibe === 'super_mushroom') {
+                avatarBox.innerHTML = `🍄`;
+                moodTitle.innerText = "SUPER MUSHROOM MODE";
+                moodTitle.className = "font-pixel text-sm text-red-400 mb-1";
+                moodDesc.innerText = "💡 ความหมาย: เติบโต มีพลัง รู้สึกอัพเลเวล!";
+                inspirationalEl.innerText = getRandomQuote(quotes.super_mushroom);
+            } else if (surveyData.vibe === 'starman') {
+                avatarBox.innerHTML = `⭐`;
+                moodTitle.innerText = "STARMAN POWER-UP!";
+                moodTitle.className = "font-pixel text-sm text-yellow-400 mb-1";
+                moodDesc.innerText = "💡 ความหมาย: ฟินสุดๆ ลื่นไหล งานเสร็จไว ไร้พ่าย!";
+                inspirationalEl.innerText = getRandomQuote(quotes.starman);
+            } else if (surveyData.vibe === 'poison_mushroom') {
+                avatarBox.innerHTML = `💀`;
+                moodTitle.innerText = "POISON MUSHROOM MODE";
+                moodTitle.className = "font-pixel text-sm text-purple-400 mb-1";
+                moodDesc.innerText = "💡 ความหมาย: เหนื่อยล้า โดนช็อตฟีล พลังชีวิตหมด (HP 0)";
+                inspirationalEl.innerText = getRandomQuote(quotes.poison_mushroom);
+            } else {
+                avatarBox.innerHTML = `🐢`;
+                moodTitle.innerText = "TURTLE SHELL DEFENSE";
+                moodTitle.className = "font-pixel text-sm text-green-400 mb-1";
+                moodDesc.innerText = "💡 ความหมาย: กดดัน ต้องระมัดระวังเป็นพิเศษ";
+                inspirationalEl.innerText = getRandomQuote(quotes.turtle_shell);
+            }
+
+            const levelBadge = document.getElementById('cardLevelBadge');
+            const levelMap = {
+                'level_1_1': 'World 1-1 (Easy Pass)',
+                'bonus_stage': 'Bonus Stage (Fun)',
+                'world_2_2': 'World 2-2 (Stuck Water)',
+                'level_8_4': 'World 8-4 (Bowser Castle)'
+            };
+            levelBadge.innerText = `LEVEL: ${levelMap[surveyData.level] || 'Unknown'}`;
+
+            const tagsContainer = document.getElementById('cardTags');
+            tagsContainer.innerHTML = '';
+            if (surveyData.tags.length > 0) {
+                surveyData.tags.forEach(tag => {
+                    const span = document.createElement('span');
+                    span.className = 'bg-yellow-400 text-black px-1.5 py-0.5 rounded text-[10px] font-bold';
+                    span.innerText = tag;
+                    tagsContainer.appendChild(span);
+                });
+            } else {
+                tagsContainer.innerHTML = '<span class="text-gray-400 text-[10px]">- ไม่มีแท็ก -</span>';
+            }
+
+            document.getElementById('cardPositive').innerText = `"${surveyData.positive}"`;
+            document.getElementById('cardFeedback').innerText = `"${surveyData.feedback}"`;
+        }
+
+        // Export Card as Image
+        function downloadCard() {
+            playSound('select');
+            const cardEl = document.getElementById('summaryCard');
+            html2canvas(cardEl, { scale: 2 }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `Sprint-Mood-Card-${surveyData.nickname}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+
+        // Integration with Google Sheet & LocalStorage Fallback
+        function sendToGoogleSheet(data) {
+            const gasUrl = localStorage.getItem('gas_app_url');
+
+            const history = JSON.parse(localStorage.getItem('sprint_mood_history') || '[]');
+            history.push({ ...data, timestamp: new Date().toISOString() });
+            localStorage.setItem('sprint_mood_history', JSON.stringify(history));
+
+            if (gasUrl) {
+                fetch(gasUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                }).then(() => {
+                    console.log('Submitted to Google Sheet successfully');
+                }).catch(err => console.error('Error submitting to GAS:', err));
+            }
+        }
+
+        function toggleConfigModal() {
+            playSound('click');
+            const modal = document.getElementById('configModal');
+            modal.classList.toggle('hidden');
+            const savedUrl = localStorage.getItem('gas_app_url');
+            if (savedUrl) {
+                document.getElementById('gasUrlInput').value = savedUrl;
+            }
+        }
+
+        function saveGasUrl() {
+            const url = document.getElementById('gasUrlInput').value.trim();
+            localStorage.setItem('gas_app_url', url);
+            alert('บันทึก Web App URL เรียบร้อยแล้ว!');
+            toggleConfigModal();
+        }
+
+        function resetForm() {
+            playSound('click');
+            resetDuckGame();
+            gameUnlocked = false;
+
+            const btn = document.getElementById('btnStartGame');
+            btn.disabled = true;
+            btn.className = 'pixel-btn bg-gray-400 text-white font-pixel py-3 px-8 text-sm md:text-base w-full sm:w-auto cursor-not-allowed';
+            btn.innerText = '🔒 COLLECT 5 TASK CARDS (50 PTS) TO START!';
+            
+            surveyData = { nickname: '', sprint: '', vibe: '', level: '', tags: [], positive: '', feedback: '' };
+            document.querySelectorAll('.vibe-option, .level-option').forEach(el => el.classList.remove('pixel-btn-selected'));
+            document.querySelectorAll('.tag-btn').forEach(el => {
+                el.classList.remove('bg-yellow-300', 'border-yellow-600');
+                el.classList.add('bg-gray-100');
+            });
+            document.getElementById('positiveText').value = '';
+            document.getElementById('feedbackText').value = '';
+            goToStep(0);
+        }
+    </script>
+</body>
+</html>
